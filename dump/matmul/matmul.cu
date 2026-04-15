@@ -152,9 +152,9 @@ void test_correctness(const std::vector<impl_t> &impls, cudaStream_t stream) {
       fflush(stdout);
       impl.fn(mm_d, m, n, k, stream);
       printf("here 2"); fflush(stdout);
-      cudaMemcpy(c_d, c_out_cpu, m * n * sizeof(bf16), cudaMemcpyDeviceToHost);
+      cudaMemcpy(c_out_cpu, c_d, m * n * sizeof(bf16), cudaMemcpyDeviceToHost);
       printf("here 3"); fflush(stdout);
-      statistics_t stats = compare_results(mm_cpu.c, c_out_cpu, m * n);
+      statistics_t stats = compare_results(c_cpu, c_out_cpu, m * n);
       printf("here 4"); fflush(stdout);
       printf("[%s] absmax=%.3f l1_norm=%.3f l2_norm=%.3f\n", impl.name, stats.absmax, stats.l1_norm, stats.l2_norm);
     }
