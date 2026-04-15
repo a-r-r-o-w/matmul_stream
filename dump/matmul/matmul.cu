@@ -17,6 +17,10 @@ namespace pantheos {
 
 using bf16 = __nv_bfloat16;
 
+__device__ void fma32(float a, float b, float *const c) {
+  asm volatile("fma.rn.f32 %0, %1, %2, %0;\n\t" : "=r"(*c), "r"(a), "r"(b) :);
+}
+
 }  // pantheos
 
 using namespace pantheos;
@@ -72,7 +76,8 @@ __global__ void matmul_v1(matmul_t *const mm) {
     return;
   float sum = 0.0f;
   for (uint32_t i = 0; i < k; ++i) {
-    sum += __bfloat162float(a[thread_row * k + i]) * __bfloat162float(b[thread_col * k + i]);
+    // sum += __bfloat162float(a[thread_row * k + i]) * __bfloat162float(b[thread_col * k + i]);
+    fma32(__bfloat162float(a[thread_row * k + i]), __bfloat162float(b[thread_col * k + i]), &sum);
   }
   c[thread_row * n + thread_col] = sum;
 }
@@ -131,31 +136,23 @@ void test_correctness(const std::vector<impl_t> &impls, cudaStream_t stream) {
     init_constant(mm_cpu.b, n * k, 1.0f);
     init_constant(mm_cpu.c, m * n, 0.0f);
     matmul_cpu_reference(&mm_cpu);
-    printf("cpu reference"); fflush(stdout);
 
     bf16 *a_d, *b_d, *c_d;
     cudaMalloc(&a_d, m * k * sizeof(bf16));
     cudaMalloc(&b_d, n * k * sizeof(bf16));
     cudaMalloc(&c_d, m * n * sizeof(bf16));
-    printf("cuda malloc done"); fflush(stdout);
     cudaMemcpy(a_d, a_cpu, m * k * sizeof(bf16), cudaMemcpyHostToDevice);
     cudaMemcpy(b_d, b_cpu, n * k * sizeof(bf16), cudaMemcpyHostToDevice);
     cudaMemcpy(c_d, c_cpu, m * n * sizeof(bf16), cudaMemcpyHostToDevice);
-    printf("memcpy"); fflush(stdout);
     matmul_t mm_d_host = {a_d, b_d, c_d, m, n, k};
     matmul_t *mm_d;
     cudaMalloc(&mm_d, sizeof(matmul_t));
     cudaMemcpy(mm_d, &mm_d_host, sizeof(matmul_t), cudaMemcpyHostToDevice);
 
     for (auto &impl: impls) {
-      printf("here 1");
-      fflush(stdout);
       impl.fn(mm_d, m, n, k, stream);
-      printf("here 2"); fflush(stdout);
       cudaMemcpy(c_out_cpu, c_d, m * n * sizeof(bf16), cudaMemcpyDeviceToHost);
-      printf("here 3"); fflush(stdout);
       statistics_t stats = compare_results(c_cpu, c_out_cpu, m * n);
-      printf("here 4"); fflush(stdout);
       printf("[%s] absmax=%.3f l1_norm=%.3f l2_norm=%.3f\n", impl.name, stats.absmax, stats.l1_norm, stats.l2_norm);
     }
     printf("\n");
