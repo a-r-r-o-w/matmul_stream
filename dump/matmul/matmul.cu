@@ -152,7 +152,7 @@ void test_correctness(const std::vector<impl_t> &impls, cudaStream_t stream) {
       fflush(stdout);
       impl.fn(mm_d, m, n, k, stream);
       printf("here 2"); fflush(stdout);
-      cudaMemcpy(mm_d->c, c_out_cpu, m * n * sizeof(bf16), cudaMemcpyDeviceToHost);
+      cudaMemcpy(c_d, c_out_cpu, m * n * sizeof(bf16), cudaMemcpyDeviceToHost);
       printf("here 3"); fflush(stdout);
       statistics_t stats = compare_results(mm_cpu.c, c_out_cpu, m * n);
       printf("here 4"); fflush(stdout);
