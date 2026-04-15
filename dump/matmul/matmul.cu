@@ -13,8 +13,6 @@
 #include <cuda_bf16.h>
 
 
-constexpr int default_precision = 5;
-
 namespace pantheos {
 
 using bf16 = __nv_bfloat16;
@@ -144,14 +142,10 @@ void test_correctness(const std::vector<impl_t> &impls, cudaStream_t stream) {
     cudaMemcpy(b_d, b_cpu, n * k * sizeof(bf16), cudaMemcpyHostToDevice);
     cudaMemcpy(c_d, c_cpu, m * n * sizeof(bf16), cudaMemcpyHostToDevice);
     printf("memcpy"); fflush(stdout);
+    matmul_t *mm_d_host = {a_d, b_d, c_d, m, n, k};
     matmul_t *mm_d;
     cudaMalloc(&mm_d, sizeof(matmul_t));
-    mm_d->a = a_d;
-    mm_d->b = b_d;
-    mm_d->c = c_d;
-    mm_d->m = m;
-    mm_d->n = n;
-    mm_d->k = k;
+    cudaMemcpy(mm_d, mm_d_host, sizeof(matmul_t), cudaMemcpyHostToDevice);
 
     for (auto &impl: impls) {
       printf("here 1");
