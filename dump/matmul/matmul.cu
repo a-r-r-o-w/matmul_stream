@@ -4,6 +4,7 @@
 
 // TODO: support randn init
 
+#include <cstdio>
 #include <iostream>
 #include <iomanip>
 #include <vector>
@@ -108,7 +109,7 @@ void matmul_cpu_reference(matmul_t *const mm) {
 void print_matrix(bf16 *a, uint32_t rows, uint32_t cols) {
   for (uint32_t i = 0; i < rows; ++i) {
     for (uint32_t j = 0; j < cols; ++j) {
-      std::cout << __bfloat162float(a[i * cols + j]) << " \n"[j == cols - 1];
+      printf("%f%c", __bfloat162float(a[i * cols + j]), " \n"[j == cols - 1]);
     }
   }
 }
@@ -150,10 +151,14 @@ void test_correctness(const std::vector<impl_t> &impls, cudaStream_t stream) {
     mm_d->k = k;
 
     for (auto &impl: impls) {
-      // TODO: compute outputs of all implementations and compare against cpu reference
+      printf("here 1");
+      fflush(stdout);
       impl.fn(mm_d, m, n, k, stream);
+      printf("here 2");
       cudaMemcpy(mm_d->c, c_out_cpu, m * n * sizeof(bf16), cudaMemcpyDeviceToHost);
+      printf("here 3");
       statistics_t stats = compare_results(mm_cpu.c, c_out_cpu);
+      printf("here 4");
       printf("[%s] absmax=%.3f l1_norm=%.3f l2_norm=%.3f\n", impl.name, stats.absmax, stats.l1_norm, stats.l2_norm);
     }
     printf("\n");
@@ -171,8 +176,6 @@ void test_correctness(const std::vector<impl_t> &impls, cudaStream_t stream) {
 
 
 int main() {
-  std::cout << std::setprecision(default_precision);
-
   std::vector<impl_t> impls = {
     {"matmul_v1", launch_matmul_v1},
   };
