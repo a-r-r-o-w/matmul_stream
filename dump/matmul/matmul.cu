@@ -6,6 +6,7 @@
 
 #include <iostream>
 #include <iomanip>
+#include <vector>
 
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
@@ -38,9 +39,31 @@ struct impl_t {
   launch_fn fn;
 };
 
+struct statistics_t {
+  float absmax = 0.0f;
+  float l1_norm = 0.0f;
+  float l2_norm = 0.0f;
+};
+
+
 uint32_t ceil_div_uint32(uint32_t x, uint32_t y) {
   return (x + y - 1) / y;
 }
+
+statistics_t compare_results(const bf16 *const x, const bf16 *const y, uint32_t size) {
+  statistics_t stats;
+  for (uint32_t i = 0; i < size; ++i) {
+    float diff = __bfloat162float(x[i]) - __bfloat162float(y[i]);
+    float absdiff = std::abs(diff);
+    stats.absmax = std::max(stats.absmax, absdiff);
+    stats.l1_norm += absdiff;
+    stats.l2_norm += diff * diff;
+  }
+  stats.l1_norm /= size;
+  stats.l2_norm /= size;
+  return stats;
+}
+
 
 __global__ void matmul_v1(matmul_t *const mm) {
   auto &[a, b, c, m, n, k] = *mm;
@@ -57,11 +80,7 @@ __global__ void matmul_v1(matmul_t *const mm) {
 
 void launch_matmul_v1(matmul_t *const mm, uint32_t m, uint32_t n, uint32_t k, cudaStream_t stream) {
   constexpr dim3 block(32, 32);
-  // A [33, 33]
-  // B [33, 33]
-  // ceil(33, 32) = 2
-  // 64 * 64
-  dim3 grid(ceil_div_uint32(m, block.x), ceil_div_uint32(n, block.n));
+  dim3 grid(ceil_div_uint32(m, block.x), ceil_div_uint32(n, block.y));
   matmul_v1<<<grid, block, 0, stream>>>(mm);
 }
 
@@ -94,7 +113,7 @@ void print_matrix(bf16 *a, uint32_t rows, uint32_t cols) {
   }
 }
 
-void test_correctness(const std::vector<impl_t> &impls) {
+void test_correctness(const std::vector<impl_t> &impls, cudaStream_t stream) {
   uint32_t shapes[][3] = {
     {3, 3, 3},
     {17, 13, 16},
@@ -103,21 +122,50 @@ void test_correctness(const std::vector<impl_t> &impls) {
     {257, 257, 257},
   };
   for (auto &[m, n, k]: shapes) {
-    bf16 *a = new bf16[m * k];
-    bf16 *b = new bf16[n * k];
-    bf16 *c = new bf16[m * n];
-    matmul_t mm = {a, b, c, m, n, k};
-    init_constant(mm.a, m * k, 1.0f);
-    init_constant(mm.b, n * k, 1.0f);
-    init_constant(mm.c, m * n, 0.0f);
-    matmul_cpu_reference(&mm);
+    printf("===== shape: [m=%d, n=%d, k=%d] =====\n", m, n, k);
+    bf16 *a_cpu = new bf16[m * k];
+    bf16 *b_cpu = new bf16[n * k];
+    bf16 *c_cpu = new bf16[m * n];
+    bf16 *c_out_cpu = new bf16[m * n];
+    matmul_t mm_cpu = {a_cpu, b_cpu, c_cpu, m, n, k};
+    init_constant(mm_cpu.a, m * k, 1.0f);
+    init_constant(mm_cpu.b, n * k, 1.0f);
+    init_constant(mm_cpu.c, m * n, 0.0f);
+    matmul_cpu_reference(&mm_cpu);
+
+    bf16 *a_d, *b_d, *c_d;
+    cudaMalloc(&a_d, m * k * sizeof(bf16));
+    cudaMalloc(&b_d, n * k * sizeof(bf16));
+    cudaMalloc(&c_d, m * n * sizeof(bf16));
+    cudaMemcpy(a_d, a_cpu, m * k * sizeof(bf16), cudaMemcpyHostToDevice);
+    cudaMemcpy(b_d, b_cpu, n * k * sizeof(bf16), cudaMemcpyHostToDevice);
+    cudaMemcpy(c_d, c_cpu, m * n * sizeof(bf16), cudaMemcpyHostToDevice);
+    matmul_t *mm_d;
+    cudaMalloc(&mm_d, sizeof(matmul_t));
+    mm_d->a = a_d;
+    mm_d->b = b_d;
+    mm_d->c = c_d;
+    mm_d->m = m;
+    mm_d->n = n;
+    mm_d->k = k;
+
     for (auto &impl: impls) {
       // TODO: compute outputs of all implementations and compare against cpu reference
+      impl.fn(mm_d, m, n, k, stream);
+      cudaMemcpy(mm_d->c, c_out_cpu, m * n * sizeof(bf16), cudaMemcpyDeviceToHost);
+      statistics_t stats = compare_results(mm_cpu.c, c_out_cpu);
+      printf("[%s] absmax=%.3f l1_diff=%.3f l2_diff=%.3f\n", impl.name, stats.absmax, stats.l1_diff, stats.l2_diff);
     }
-    // print_matrix(mm.c, m, n);
-    delete[] mm.a;
-    delete[] mm.b;
-    delete[] mm.c;
+    printf("\n");
+
+    cudaFree(mm_d);
+    cudaFree(c_d);
+    cudaFree(b_d);
+    cudaFree(a_d);
+    delete[] c_out_cpu;
+    delete[] c_cpu;
+    delete[] b_cpu;
+    delete[] a_cpu;
   }
 }
 
@@ -126,9 +174,15 @@ int main() {
   std::cout << std::setprecision(default_precision);
 
   std::vector<impl_t> impls = {
-    {"matmul_v1", launch_matmul_v1};
-  }
-  test_correctness(impls);
+    {"matmul_v1", launch_matmul_v1},
+  };
+
+  cudaStream_t stream;
+  cudaStreamCreate(&stream);
+  
+  test_correctness(impls, stream);
+
+  cudaStreamDestroy(&stream);
 
   return 0;
 }
