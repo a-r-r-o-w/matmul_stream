@@ -3,6 +3,7 @@
 // C: [M, N]
 
 #include <iostream>
+#include <iomanip>
 
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
@@ -42,7 +43,7 @@ void matmul_cpu_reference(matmul_t *const mm) {
       for (uint32_t k = 0; k < mm->k; ++k) {
         sum += __bfloat162float(mm->a[i * mm->k + k]) * __bfloat162float(mm->b[j * mm->k + k]);
       }
-      mm->c[i * n + j] = __float2bfloat16(sum);
+      mm->c[i * mm->n + j] = __float2bfloat16(sum);
     }
   }
 }
@@ -60,12 +61,18 @@ void test_correctness() {
     {3, 3, 3}
   };
   for (auto &[m, n, k]: shapes) {
-    matmul_t mm;
-    init_constant(mm->a, m * k, 1.0f);
-    init_constant(mm->b, n * k, 1.0f);
-    init_constant(mm->c, m * n, 0.0f);
+    bf16 *a = new bf16[m * k];
+    bf16 *b = new bf16[n * k];
+    bf16 *c = new bf16[m * n];
+    matmul_t mm = {a, b, c, m, n, k};
+    init_constant(mm.a, m * k, 1.0f);
+    init_constant(mm.b, n * k, 1.0f);
+    init_constant(mm.c, m * n, 0.0f);
     matmul_cpu_reference(&mm);
-    print_matrix(mm->c, m, n);
+    print_matrix(mm.c, m, n);
+    delete[] mm.a;
+    delete[] mm.b;
+    delete[] mm.c;
   }
 }
 
