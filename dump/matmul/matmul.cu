@@ -18,7 +18,7 @@ namespace pantheos {
 using bf16 = __nv_bfloat16;
 
 __device__ void fma32(float a, float b, float *const c) {
-  asm volatile("fma.rn.f32 %0, %1, %2, %0;\n\t" : "=r"(*c), "r"(a), "r"(b) :);
+  asm volatile("fma.rn.f32 %0, %1, %2, %0;\n\t" : "+f"(*c) : "f"(a), "f"(b) :);
 }
 
 }  // pantheos
@@ -76,8 +76,8 @@ __global__ void matmul_v1(matmul_t *const mm) {
     return;
   float sum = 0.0f;
   for (uint32_t i = 0; i < k; ++i) {
-    // sum += __bfloat162float(a[thread_row * k + i]) * __bfloat162float(b[thread_col * k + i]);
-    fma32(__bfloat162float(a[thread_row * k + i]), __bfloat162float(b[thread_col * k + i]), &sum);
+    sum += __bfloat162float(a[thread_row * k + i]) * __bfloat162float(b[thread_col * k + i]);
+    // fma32(__bfloat162float(a[thread_row * k + i]), __bfloat162float(b[thread_col * k + i]), &sum);
   }
   c[thread_row * n + thread_col] = sum;
 }
