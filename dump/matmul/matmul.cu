@@ -142,10 +142,10 @@ void test_correctness(const std::vector<impl_t> &impls, cudaStream_t stream) {
     cudaMemcpy(b_d, b_cpu, n * k * sizeof(bf16), cudaMemcpyHostToDevice);
     cudaMemcpy(c_d, c_cpu, m * n * sizeof(bf16), cudaMemcpyHostToDevice);
     printf("memcpy"); fflush(stdout);
-    matmul_t *mm_d_host = {a_d, b_d, c_d, m, n, k};
+    matmul_t mm_d_host = {a_d, b_d, c_d, m, n, k};
     matmul_t *mm_d;
     cudaMalloc(&mm_d, sizeof(matmul_t));
-    cudaMemcpy(mm_d, mm_d_host, sizeof(matmul_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(mm_d, &mm_d_host, sizeof(matmul_t), cudaMemcpyHostToDevice);
 
     for (auto &impl: impls) {
       printf("here 1");
